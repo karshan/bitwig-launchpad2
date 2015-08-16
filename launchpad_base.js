@@ -28,51 +28,47 @@ for (var button in BUTTONS) {
   NOTE_BUTTON_NAMES[note] = button;
 }
 
-Launchpad = function(midiOut, midiIn) {
+Launchpad = function(midiOut, midiIn, options) {
   var eventHandlers = {};
+  var activeView = null;
   var boardColors = [];
   var lastFlushedColors = [];
   var needsFlush = true;
   var out = host.getMidiOutPort(midiOut);
-  var _this = this;
   host.getMidiInPort(midiIn).setMidiCallback(handleMidi.bind(this));
 
-  setInterval(function() {if (_this.autoFlush) flushBoardColors()}, 10);
+  setInterval(function() {if (options.autoFlush) flushDevice()}, 25);
 
-  function flushBoardColors() {
+  function flushDevice() {
     if (!needsFlush) return;
     needsFlush = false;
-    var sysexMessage = 'F000202902180B';
-    for (var i = 0; i <= 39; i++) {
-      if (NOTE_BUTTON_NAMES[i+11] && !_this.useLaunchColumnAsNotes) continue;
-      var colorHex = (boardColors[i] || Launchpad.OFF).toHex();
-      if (lastFlushedColors[i] == colorHex) continue;
-      lastFlushedColors[i] = colorHex;
-      sysexMessage += (i+11).toHex() + colorHex;
-    }
-    sysexMessage += 'F7';
-    out.sendSysex(sysexMessage);
 
-    var sysexMessage = 'F000202902180B';
-    for (var i = 40; i <= 78; i++) {
-      if (NOTE_BUTTON_NAMES[i+11] && !_this.useLaunchColumnAsNotes) continue;
-      var colorHex = (boardColors[i] || Launchpad.OFF).toHex();
-      if (lastFlushedColors[i] == colorHex) continue;
-      lastFlushedColors[i] = colorHex;
-      sysexMessage += (i+11).toHex() + colorHex;
+    var ranges = [[0,49], [50,90], [93,100]];
+    for (var req = 0; req < ranges.length; req++) {
+      var sysexMessage = 'F000202902180B';
+      var range = ranges[req];
+      for (var i = range[0]; i <= range[1]; i++) {
+        var colorHex = boardColors[i] ? boardColors[i].toHex() : '000000';
+        if (lastFlushedColors[i] === colorHex) continue;
+        lastFlushedColors[i] = colorHex;
+        sysexMessage += (i+11).toHex() + colorHex;
+
+      }
+      sysexMessage += 'F7';
+      out.sendSysex(sysexMessage);
     }
-    sysexMessage += 'F7';
-    out.sendSysex(sysexMessage);
+    // println(lastFlushedColors)
+
   }
-
 
 
   function handleMidi(status, data1, data2) {
     if (isChannelController(status)) {
       handleCC(data1, data2);
+      // out.sendMidi(status,data1,data2)
     }
     else {
-      if (NOTE_BUTTON_NAMES[data1] && !this.useLaunchColumnAsNotes) {
+      if (NOTE_BUTTON_NAMES[data1] && !options.useLaunchColumnAsNotes) {
         handleCC(data1,data2);
       }
       else {
@@ -100,7 +96,7 @@ Launchpad = function(midiOut, midiIn) {
 
     //out.sendMidi(144, data1, data2);
 
-    println(data1)
+    // println(data1)
   }
 
   ///// PUBLIC
@@ -110,21 +106,18 @@ Launchpad = function(midiOut, midiIn) {
 
   // Methods
   this.flush = function() {
-    flushBoardColors();
+    flushDevice();
   }
 
-  this.buttonOn = function() {
+  this.setButtonColor = function(button, color) {
+    boardColors[BUTTONS[button].data1-11] = color;
+    needsFlush = true;
+  }
+  this.setGridColor = function(x, y, color) {
+    boardColors[x + y * 10] = color;
+    needsFlush = true;
+  }
 
-  }
-  this.lightGrid = function() {
-    out.sendMidi(144,88,81)
-  }
-  this.blinkGrid = function() {
-    out.sendMidi(145,88,81)
-  }
-  this.pulseGrid = function() {
-    out.sendMidi(146,88,81)
-  }
 
   this.on = function(event, filterOrCb, cb) {
     var filter;
@@ -137,18 +130,12 @@ Launchpad = function(midiOut, midiIn) {
     eventHandlers[event].push({filter: filter, cb: cb.bind(this)});
   }
 
-  this.setColor = function(x, y, color) {
-    boardColors[x + y * 10] = color;
-    needsFlush = true;
-  }
-
   this.onButtonDown = function(buttonOrCb, cb) {
     this.on('buttonDown', buttonOrCb, cb);
   }
 
-  this.clearBoard = function() {
+  this.clearDevice = function() {
     boardColors = [];
-    //out.sendSysex('F000202902180E00F7');
   }
 
   this.getBoardColors = function() {
@@ -160,7 +147,19 @@ Launchpad = function(midiOut, midiIn) {
     needsFlush = true;
   }
 
+  this.setView = function(view) {
+    this.clearDevice();
+    if (activeView) activeView.onHide();
+    activeView = view;
+    view.onShow();
+  }
+
 }
 
-Launchpad.WHITE = [63,63,63]
-Launchpad.OFF =   [0,0,0]
+Launchpad.color = function(colorName) {
+  var colors = {
+    'WHITE': [63,63,63],
+    'OFF': [0,0,0],
+    'RED': [63,0,0]}
+  return colors[colorName].slice(0);
+}

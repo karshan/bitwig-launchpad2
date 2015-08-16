@@ -29,6 +29,10 @@ Number.prototype.toHex = function() {
   return result;
 }
 
+String.prototype.toHex = function() {
+  return this;
+}
+
 Array.prototype.toHex = function() {
   var result = '';
   for (var i = 0; i < this.length; i++) {
