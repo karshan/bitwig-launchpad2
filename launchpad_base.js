@@ -28,16 +28,59 @@ for (var button in BUTTONS) {
   NOTE_BUTTON_NAMES[note] = button;
 }
 
+var NUM_TRACKS = 8;
+var NUM_SENDS = 0;
+var NUM_SCENES = 8;
+
+function mkColor(red, green, blue) {
+  return [red * 63, green * 63, blue * 63].map(Math.floor);
+}
+
 Launchpad = function(midiOut, midiIn, options) {
   var eventHandlers = {};
   var activeView = null;
   var boardColors = [];
   var lastFlushedColors = [];
   var needsFlush = true;
+
+  var clips = []
+
   var out = host.getMidiOutPort(midiOut);
+  var trackBank = host.createMainTrackBank(NUM_TRACKS, NUM_SENDS, NUM_SCENES);
+
+  for (var i = 0; i < NUM_TRACKS; i++) {
+    clips[i] = [];
+    for (var j = 0; j < NUM_SCENES; j++) {
+      clips[i][j] = {};
+    }
+
+    var clipLauncherSlots = trackBank.getTrack(i).getClipLauncher();
+    clipLauncherSlots.addColorObserver(colorObserver(i).bind(this));
+    clipLauncherSlots.addIsPlayingObserver(isPlayingObserver(i).bind(this));
+  }
+
   host.getMidiInPort(midiIn).setMidiCallback(handleMidi.bind(this));
 
   setInterval(function() {if (options.autoFlush) flushDevice()}, 25);
+
+  function isPlayingObserver(track) {
+    return function(slot, isPlaying) {
+      println("isPlaying: " + track + " " + slot + " " + isPlaying)
+      clips[track][slot].isPlaying = isPlaying;
+      if (isPlaying) {
+        this.setGridColor(slot, NUM_TRACKS - track - 1, mkColor(1, 1, 1));
+      } else {
+        this.setGridColor(slot, NUM_TRACKS - track - 1, clips[track][slot].color);
+      }
+    }
+  }
+
+  function colorObserver(track) {
+    return function(slot, red, green, blue) {
+      clips[track][slot].color = mkColor(red, green, blue);
+      this.setGridColor(slot, NUM_TRACKS - track - 1, clips[track][slot].color);
+    };
+  }
 
   function flushDevice() {
     if (!needsFlush) return;
@@ -93,7 +136,9 @@ Launchpad = function(midiOut, midiIn, options) {
   }
 
   function handleNote(data1, data2) {
-
+    var row = (Math.floor(data1/10)) % 10
+    var col = data1 % 10;
+    trackBank.getTrack(8 - row).getClipLauncher().launch(col - 1);
     //out.sendMidi(144, data1, data2);
 
     // println(data1)
@@ -114,6 +159,7 @@ Launchpad = function(midiOut, midiIn, options) {
     needsFlush = true;
   }
   this.setGridColor = function(x, y, color) {
+    println("setting grid color: " + x + " " + y + " " + color)
     boardColors[x + y * 10] = color;
     needsFlush = true;
   }
